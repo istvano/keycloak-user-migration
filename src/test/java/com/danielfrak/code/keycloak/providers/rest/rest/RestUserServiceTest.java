@@ -7,6 +7,9 @@ import com.danielfrak.code.keycloak.providers.rest.rest.http.HttpResponse;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import java.util.concurrent.TimeUnit;
 import org.apache.http.HttpStatus;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,9 +47,15 @@ class RestUserServiceTest {
     @Mock
     private ComponentModel model;
 
+    private Cache<String, LegacyUser> cache;
+
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
+        cache = Caffeine.newBuilder()
+            .maximumSize(100)
+            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .build();
         registerBasicConfig();
     }
 
@@ -61,7 +70,7 @@ class RestUserServiceTest {
         var token = "anyToken";
         enableApiToken(token);
 
-        new RestUserService(model, httpClient, new ObjectMapper());
+        new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
         verify(httpClient).enableBearerTokenAuth(token);
     }
@@ -77,7 +86,7 @@ class RestUserServiceTest {
         var password = "anyPassword";
         enableBasicAuth(username, password);
 
-        new RestUserService(model, httpClient, new ObjectMapper());
+        new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
         verify(httpClient).enableBasicAuth(username, password);
     }
@@ -90,7 +99,7 @@ class RestUserServiceTest {
 
     @Test
     void findByEmailShouldThrowWhenRuntimeExceptionOccurs() {
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         var cause = new RuntimeException();
 
         when(httpClient.get(any()))
@@ -104,7 +113,7 @@ class RestUserServiceTest {
 
     @Test
     void findByEmailShouldThrowWhenIOExceptionOccurs() {
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
         when(httpClient.get(any()))
                 .thenReturn(new HttpResponse(200, "malformedJson"));
@@ -118,9 +127,10 @@ class RestUserServiceTest {
     @Test
     void findByEmailShouldReturnAUserWhenUserIsFoundAndEmailMatches() throws IOException {
         var expectedUser = createALegacyUser("someUsername", "email@example.com");
+
         var response = new HttpResponse(HttpStatus.SC_OK, objectMapper.writeValueAsString(expectedUser));
         var path = String.format(URI_PATH_FORMAT, URI, Encode.urlEncode(expectedUser.getEmail()));
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
         when(httpClient.get(path)).thenReturn(response);
 
@@ -135,7 +145,7 @@ class RestUserServiceTest {
         var expectedUser = createALegacyUser("someUsername", "email@example.com");
         var response = new HttpResponse(HttpStatus.SC_OK, objectMapper.writeValueAsString(expectedUser));
         var path = String.format(URI_PATH_FORMAT, URI, Encode.urlEncode("EMAIL@EXAMPLE.COM"));
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
         when(httpClient.get(path)).thenReturn(response);
 
@@ -166,7 +176,7 @@ class RestUserServiceTest {
         var expectedUser = createALegacyUser("someUsername", "email@example.com");
         var path = String.format(URI_PATH_FORMAT, URI, Encode.urlEncode(expectedUser.getEmail()));
         var response = new HttpResponse(HttpStatus.SC_NOT_FOUND);
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         when(httpClient.get(path)).thenReturn(response);
 
         var result = restUserService.findByUsername(expectedUser.getEmail());
@@ -185,9 +195,11 @@ class RestUserServiceTest {
         var expectedUser = createALegacyUser("someUsername", returnedEmail);
         var path = String.format(URI_PATH_FORMAT, URI, requestedEmail);
         var response = new HttpResponse(HttpStatus.SC_OK, objectMapper.writeValueAsString(expectedUser));
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
-        when(httpClient.get(path)).thenReturn(response);
+        if (requestedEmail != null) {
+            when(httpClient.get(path)).thenReturn(response);
+        }
 
         var result = restUserService.findByEmail(requestedEmail);
 
@@ -196,7 +208,7 @@ class RestUserServiceTest {
 
     @Test
     void findByUsernameShouldThrowWhenRuntimeExceptionOccurs() {
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         var cause = new RuntimeException();
 
         when(httpClient.get(any()))
@@ -210,7 +222,7 @@ class RestUserServiceTest {
 
     @Test
     void findByUsernameShouldThrowWhenIOExceptionOccurs() {
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
         when(httpClient.get(any()))
                 .thenReturn(new HttpResponse(200, "malformedJson"));
@@ -226,7 +238,7 @@ class RestUserServiceTest {
         var expectedUser = createALegacyUser("someUsername", "email@example.com");
         var path = String.format(URI_PATH_FORMAT, URI, expectedUser.getUsername());
         var response = new HttpResponse(HttpStatus.SC_OK, objectMapper.writeValueAsString(expectedUser));
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         when(httpClient.get(path)).thenReturn(response);
 
         var result = restUserService.findByUsername(expectedUser.getUsername());
@@ -240,7 +252,7 @@ class RestUserServiceTest {
         var expectedUser = createALegacyUser("someUsername", "email@example.com");
         var path = String.format(URI_PATH_FORMAT, URI, "SOMEUSERNAME");
         var response = new HttpResponse(HttpStatus.SC_OK, objectMapper.writeValueAsString(expectedUser));
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         when(httpClient.get(path)).thenReturn(response);
 
         var result = restUserService.findByUsername("SOMEUSERNAME");
@@ -269,7 +281,7 @@ class RestUserServiceTest {
         var path = String.format(URI_PATH_FORMAT, URI, expectedUser.getUsername());
         var response = new HttpResponse(HttpStatus.SC_NOT_FOUND);
         when(httpClient.get(path)).thenReturn(response);
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
         var result = restUserService.findByUsername(expectedUser.getUsername());
 
@@ -281,7 +293,7 @@ class RestUserServiceTest {
         var expectedUser = createALegacyUser("differentUsername", "email@example.com");
         var path = String.format(URI_PATH_FORMAT, URI, "someUsername");
         var response = new HttpResponse(HttpStatus.SC_OK, objectMapper.writeValueAsString(expectedUser));
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
         when(httpClient.get(path)).thenReturn(response);
 
@@ -301,9 +313,11 @@ class RestUserServiceTest {
         var expectedUser = createALegacyUser(returnedUsername, "email@example.com");
         var path = String.format(URI_PATH_FORMAT, URI, requestedUsername);
         var response = new HttpResponse(HttpStatus.SC_OK, objectMapper.writeValueAsString(expectedUser));
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
 
-        when(httpClient.get(path)).thenReturn(response);
+        if (requestedUsername != null) {
+            when(httpClient.get(path)).thenReturn(response);
+        }
 
         var result = restUserService.findByUsername(requestedUsername);
 
@@ -345,7 +359,6 @@ class RestUserServiceTest {
         var username = "some Username";
         var password = "anyPassword";
         var path = String.format(URI_PATH_FORMAT, URI, "some+Username");
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
         var response = new HttpResponse(HttpStatus.SC_OK);
         var expectedBody = objectMapper.writeValueAsString(new UserPasswordDto(password));
         when(httpClient.post(path, expectedBody)).thenReturn(response);
@@ -360,7 +373,7 @@ class RestUserServiceTest {
         var username = "someUsername";
         var password = "anyPassword";
         var path = String.format(URI_PATH_FORMAT, URI, username);
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         var response = new HttpResponse(HttpStatus.SC_NOT_FOUND);
         when(httpClient.post(eq(path), anyString())).thenReturn(response);
 
@@ -373,7 +386,7 @@ class RestUserServiceTest {
     void isPasswordValidShouldThrowWhenIOExceptionOccurs() throws JsonProcessingException {
         var objectMapper = mock(ObjectMapper.class);
         var cause = mock(JsonProcessingException.class);
-        var restUserService = new RestUserService(model, httpClient, objectMapper);
+        var restUserService = new RestUserService(model, httpClient, objectMapper, cache);
 
         when(objectMapper.writeValueAsString(any()))
                 .thenThrow(cause);

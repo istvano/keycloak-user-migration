@@ -5,6 +5,8 @@ import com.danielfrak.code.keycloak.providers.rest.remote.LegacyUserService;
 import com.danielfrak.code.keycloak.providers.rest.exceptions.RestUserProviderException;
 import com.danielfrak.code.keycloak.providers.rest.rest.http.HttpClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import java.util.regex.Pattern;
 import org.apache.http.HttpStatus;
 import org.keycloak.common.util.Encode;
 import org.keycloak.component.ComponentModel;
@@ -12,19 +14,25 @@ import org.keycloak.component.ComponentModel;
 import java.io.IOException;
 import java.util.Locale;
 import java.util.Optional;
+import org.keycloak.utils.StringUtil;
 
 import static com.danielfrak.code.keycloak.providers.rest.ConfigurationProperties.*;
 
 public class RestUserService implements LegacyUserService {
 
+    private static final Pattern KEY_SEPARATOR = Pattern.compile("::");
     private final String uri;
+    private final String cacheSegment;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final Cache<String, LegacyUser> cache;
 
-    public RestUserService(ComponentModel model, HttpClient httpClient, ObjectMapper objectMapper) {
+    public RestUserService(ComponentModel model, HttpClient httpClient, ObjectMapper objectMapper, Cache<String, LegacyUser> cache) {
         this.httpClient = httpClient;
         this.uri = model.getConfig().getFirst(URI_PROPERTY);
+        this.cacheSegment = model.getConfig().getFirst(CACHE_SEGMENT) + "::";
         this.objectMapper = objectMapper;
+        this.cache = cache;
 
         configureBasicAuth(model, httpClient);
         configureBearerTokenAuth(model, httpClient);
@@ -69,17 +77,22 @@ public class RestUserService implements LegacyUserService {
     }
 
     private Optional<LegacyUser> findLegacyUser(String usernameOrEmail) {
-        if (usernameOrEmail != null) {
-            usernameOrEmail = Encode.urlEncode(usernameOrEmail);
+        if (StringUtil.isBlank(usernameOrEmail)) {
+            return Optional.empty();
         }
-        var getUsernameUri = String.format("%s/%s", this.uri, usernameOrEmail);
+        return Optional.ofNullable(cache.get(cacheSegment + usernameOrEmail, this::loadLegacyUser));
+    }
+
+    private LegacyUser loadLegacyUser(String usernameOrEmail) {
+        String userToFind = KEY_SEPARATOR.split(usernameOrEmail)[1];
+        var getUsernameUri = String.format("%s/%s", this.uri, userToFind);
+         usernameOrEmail = Encode.urlEncode(usernameOrEmail);
         try {
             var response = this.httpClient.get(getUsernameUri);
             if (response.getCode() != HttpStatus.SC_OK) {
-                return Optional.empty();
+                return null;
             }
-            var legacyUser = objectMapper.readValue(response.getBody(), LegacyUser.class);
-            return Optional.ofNullable(legacyUser);
+            return objectMapper.readValue(response.getBody(), LegacyUser.class);
         } catch (RuntimeException|IOException e) {
             throw new RestUserProviderException(e);
         }
