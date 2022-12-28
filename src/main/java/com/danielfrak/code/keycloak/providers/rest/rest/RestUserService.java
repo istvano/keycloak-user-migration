@@ -85,8 +85,8 @@ public class RestUserService implements LegacyUserService {
 
     private LegacyUser loadLegacyUser(String usernameOrEmail) {
         String userToFind = KEY_SEPARATOR.split(usernameOrEmail)[1];
+        userToFind = Encode.urlEncode(userToFind);
         var getUsernameUri = String.format("%s/%s", this.uri, userToFind);
-         usernameOrEmail = Encode.urlEncode(usernameOrEmail);
         try {
             var response = this.httpClient.get(getUsernameUri);
             if (response.getCode() != HttpStatus.SC_OK) {
