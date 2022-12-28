@@ -266,7 +266,7 @@ class RestUserServiceTest {
         var expectedUser = createALegacyUser("some Username", "email@example.com");
         var path = String.format(URI_PATH_FORMAT, URI, "SOME+USERNAME");
         var response = new HttpResponse(HttpStatus.SC_OK, objectMapper.writeValueAsString(expectedUser));
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         when(httpClient.get(path)).thenReturn(response);
 
         var result = restUserService.findByUsername("SOME USERNAME");
@@ -329,7 +329,7 @@ class RestUserServiceTest {
         var username = "someUsername";
         var password = "anyPassword";
         var path = String.format(URI_PATH_FORMAT, URI, username);
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         var response = new HttpResponse(HttpStatus.SC_OK);
         var expectedBody = objectMapper.writeValueAsString(new UserPasswordDto(password));
         when(httpClient.post(path, expectedBody)).thenReturn(response);
@@ -344,7 +344,7 @@ class RestUserServiceTest {
         String username = null;
         var password = "anyPassword";
         var path = String.format(URI_PATH_FORMAT, URI, username);
-        var restUserService = new RestUserService(model, httpClient, new ObjectMapper());
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         var response = new HttpResponse(HttpStatus.SC_OK);
         var expectedBody = objectMapper.writeValueAsString(new UserPasswordDto(password));
         when(httpClient.post(path, expectedBody)).thenReturn(response);
@@ -361,6 +361,7 @@ class RestUserServiceTest {
         var path = String.format(URI_PATH_FORMAT, URI, "some+Username");
         var response = new HttpResponse(HttpStatus.SC_OK);
         var expectedBody = objectMapper.writeValueAsString(new UserPasswordDto(password));
+        var restUserService = new RestUserService(model, httpClient, new ObjectMapper(), cache);
         when(httpClient.post(path, expectedBody)).thenReturn(response);
 
         var isPasswordValid = restUserService.isPasswordValid(username, password);
