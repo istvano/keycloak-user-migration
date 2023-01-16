@@ -46,7 +46,7 @@ dev/migrate: ##@dev Run migration container to create realm
 .PHONY: dev/build
 dev/build: ##@dev Build keycloak image to run extension
 	@echo "Building docker image"
-	(cd docker && $(COMPOSE) build)
+	(cd docker && $(COMPOSE) build --no-cache)
 	@echo "Completed..."
 
 .PHONY: dev/run

@@ -14,7 +14,7 @@ class LegacyUserTest {
     @Test
     void shouldGetAndSetUsername() {
         var user = new LegacyUser();
-        var expectedValue = "someValue";
+        var expectedValue = "somevalue";
         user.setUsername(expectedValue);
         assertEquals(expectedValue, user.getUsername());
     }
@@ -22,7 +22,7 @@ class LegacyUserTest {
     @Test
     void shouldGetAndSetEmail() {
         var user = new LegacyUser();
-        var expectedValue = "someValue";
+        var expectedValue = "somevalue";
         user.setEmail(expectedValue);
         assertEquals(expectedValue, user.getEmail());
     }

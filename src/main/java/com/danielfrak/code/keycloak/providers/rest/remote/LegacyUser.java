@@ -34,7 +34,7 @@ public class LegacyUser {
     }
 
     public void setUsername(String username) {
-        this.username = username;
+        this.username = toLowerCaseSafe(username);
     }
 
     public String getEmail() {
@@ -42,7 +42,7 @@ public class LegacyUser {
     }
 
     public void setEmail(String email) {
-        this.email = email;
+        this.email = toLowerCaseSafe(email);
     }
 
     public String getFirstName() {
@@ -136,5 +136,9 @@ public class LegacyUser {
     public int hashCode() {
         return Objects.hash(id, username, email, firstName, lastName, isEnabled, isEmailVerified, attributes,
                 roles, groups, requiredActions);
+    }
+
+    public static String toLowerCaseSafe(String str) {
+        return str == null ? null : str.toLowerCase();
     }
 }
