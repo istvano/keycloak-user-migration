@@ -1,4 +1,4 @@
-ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:20.0.1
+ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:21.0.1
 
 FROM maven as builder
 COPY pom.xml /tmp/
