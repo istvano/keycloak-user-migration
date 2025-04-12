@@ -24,7 +24,7 @@ $(eval $(call defw,NAME,$(NAME)))
 $(eval $(call defw,VERSION,$(shell . $(RELEASE_SUPPORT) ; getVersion)))
 $(eval $(call defw,TAG,$(shell . $(RELEASE_SUPPORT); getTag)))
 $(eval $(call defw,DOCKER,docker))
-$(eval $(call defw,COMPOSE,docker-compose))
+$(eval $(call defw,COMPOSE,docker compose))
 
 PLATFORM ?= linux/amd64
 

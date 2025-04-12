@@ -3,14 +3,18 @@ package com.danielfrak.code.keycloak.providers.rest;
 import com.danielfrak.code.keycloak.providers.rest.remote.LegacyUser;
 import com.danielfrak.code.keycloak.providers.rest.remote.LegacyUserService;
 import com.danielfrak.code.keycloak.providers.rest.remote.UserModelFactory;
+import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.credential.CredentialInput;
 import org.keycloak.credential.CredentialInputUpdater;
 import org.keycloak.credential.CredentialInputValidator;
+import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.cache.CachedUserModel;
+import org.keycloak.models.cache.OnUserCache;
 import org.keycloak.models.credential.PasswordCredentialModel;
 import org.keycloak.policy.PasswordPolicyManagerProvider;
 import org.keycloak.policy.PolicyError;
@@ -24,24 +28,28 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import org.keycloak.storage.user.UserQueryProvider;
 
 /**
  * Provides legacy user migration functionality
  */
 public class LegacyProvider implements UserStorageProvider,
-        UserLookupProvider,
-        CredentialInputUpdater,
-        CredentialInputValidator {
+    UserLookupProvider,
+    UserQueryProvider,
+    OnUserCache,
+    CredentialInputUpdater,
+    CredentialInputValidator {
 
     private static final Logger LOG = Logger.getLogger(LegacyProvider.class);
-    private static final Set<String> supportedCredentialTypes = Collections.singleton(PasswordCredentialModel.TYPE);
+    private static final Set<String> supportedCredentialTypes = Collections.singleton(
+        PasswordCredentialModel.TYPE);
     private final KeycloakSession session;
     private final LegacyUserService legacyUserService;
     private final UserModelFactory userModelFactory;
     private final ComponentModel model;
 
     public LegacyProvider(KeycloakSession session, LegacyUserService legacyUserService,
-                          UserModelFactory userModelFactory, ComponentModel model) {
+        UserModelFactory userModelFactory, ComponentModel model) {
         this.session = session;
         this.legacyUserService = legacyUserService;
         this.userModelFactory = userModelFactory;
@@ -49,13 +57,14 @@ public class LegacyProvider implements UserStorageProvider,
     }
 
 
-    private UserModel getUserModel(RealmModel realm, String username, Supplier<Optional<LegacyUser>> user) {
+    private UserModel getUserModel(RealmModel realm, String username,
+        Supplier<Optional<LegacyUser>> user) {
         return user.get()
-                .map(u -> userModelFactory.create(u, realm))
-                .orElseGet(() -> {
-                    LOG.warnf("User not found in external repository: %s", username);
-                    return null;
-                });
+            .map(u -> userModelFactory.create(u, realm))
+            .orElseGet(() -> {
+                LOG.warnf("User not found in external repository: %s", username);
+                return null;
+            });
     }
 
     @Override
@@ -82,16 +91,18 @@ public class LegacyProvider implements UserStorageProvider,
     }
 
     private String getUserIdentifier(UserModel userModel) {
-        var userIdConfig = model.getConfig().getFirst(ConfigurationProperties.USE_USER_ID_FOR_CREDENTIAL_VERIFICATION);
+        var userIdConfig = model.getConfig()
+            .getFirst(ConfigurationProperties.USE_USER_ID_FOR_CREDENTIAL_VERIFICATION);
         var useUserId = Boolean.parseBoolean(userIdConfig);
         return useUserId ? userModel.getId() : userModel.getUsername();
     }
 
-    private boolean passwordDoesNotBreakPolicy(RealmModel realmModel, UserModel userModel, String password) {
+    private boolean passwordDoesNotBreakPolicy(RealmModel realmModel, UserModel userModel,
+        String password) {
         PasswordPolicyManagerProvider passwordPolicyManagerProvider = session.getProvider(
-                PasswordPolicyManagerProvider.class);
+            PasswordPolicyManagerProvider.class);
         PolicyError error = passwordPolicyManagerProvider
-                .validate(realmModel, userModel, password);
+            .validate(realmModel, userModel, password);
 
         return error == null;
     }
@@ -99,15 +110,15 @@ public class LegacyProvider implements UserStorageProvider,
     private void addUpdatePasswordAction(UserModel userModel, String userIdentifier) {
         if (updatePasswordActionMissing(userModel)) {
             LOG.infof("Could not use legacy password for user %s due to password policy." +
-                            " Adding UPDATE_PASSWORD action.",
-                    userIdentifier);
+                    " Adding UPDATE_PASSWORD action.",
+                userIdentifier);
             userModel.addRequiredAction(UserModel.RequiredAction.UPDATE_PASSWORD);
         }
     }
 
     private boolean updatePasswordActionMissing(UserModel userModel) {
         return userModel.getRequiredActionsStream()
-                .noneMatch(s -> s.contains(UserModel.RequiredAction.UPDATE_PASSWORD.name()));
+            .noneMatch(s -> s.contains(UserModel.RequiredAction.UPDATE_PASSWORD.name()));
     }
 
     @Override
@@ -127,11 +138,13 @@ public class LegacyProvider implements UserStorageProvider,
 
     @Override
     public boolean updateCredential(RealmModel realm, UserModel user, CredentialInput input) {
-        severFederationLink(user);
+        if (!user.getClass().equals(InMemoryUserAdapter.class)) {
+            severFederationLink(user);
+        }
         return false;
     }
 
-    private void severFederationLink(UserModel user) {
+    private static void severFederationLink(UserModel user) {
         LOG.info("Severing federation link for " + user.getUsername());
         String link = user.getFederationLink();
         if (link != null && !link.isBlank()) {
@@ -145,7 +158,8 @@ public class LegacyProvider implements UserStorageProvider,
     }
 
     @Override
-    public Stream<String> getDisableableCredentialTypesStream(RealmModel realmModel, UserModel userModel) {
+    public Stream<String> getDisableableCredentialTypesStream(RealmModel realmModel,
+        UserModel userModel) {
         return Stream.empty();
     }
 
@@ -164,5 +178,35 @@ public class LegacyProvider implements UserStorageProvider,
     @Override
     public UserModel getUserByEmail(RealmModel realmModel, String email) {
         return getUserModel(realmModel, email, () -> legacyUserService.findByEmail(email));
+    }
+
+    @Override
+    public Stream<UserModel> searchForUserStream(RealmModel realmModel, String search, Integer firstResult, Integer maxResults) {
+        UserModel user = getUserModel(realmModel, search, () -> legacyUserService.findByUsername(search));
+        return Stream.ofNullable(user);
+    }
+
+    @Override
+    public Stream<UserModel> searchForUserStream(RealmModel realmModel, Map<String, String> map,
+        Integer firstResult, Integer maxResults) {
+        return Stream.empty();
+    }
+
+    @Override
+    public Stream<UserModel> getGroupMembersStream(RealmModel realmModel, GroupModel groupModel,
+        Integer integer, Integer integer1) {
+        return Stream.empty();
+    }
+
+    @Override
+    public Stream<UserModel> searchForUserByUserAttributeStream(RealmModel realmModel, String s,
+        String s1) {
+        return Stream.empty();
+    }
+
+    @Override
+    public void onCache(RealmModel realmModel, CachedUserModel cachedUserModel,
+        UserModel userModel) {
+
     }
 }
